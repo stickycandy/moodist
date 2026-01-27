@@ -1,0 +1,36 @@
+name: moodist_flutter
+description: Moodist - Ambient sounds for focus and calm. iOS & Android.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+  provider: ^6.1.1
+  shared_preferences: ^2.2.2
+  audioplayers: ^5.2.1
+  uuid: ^4.2.2
+  share_plus: ^7.2.1
+  path_provider: ^2.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/sounds/nature/
+    - assets/sounds/rain/
+    - assets/sounds/animals/
+    - assets/sounds/urban/
+    - assets/sounds/places/
+    - assets/sounds/transport/
+    - assets/sounds/things/
+    - assets/sounds/noise/
+    - assets/sounds/binaural/
