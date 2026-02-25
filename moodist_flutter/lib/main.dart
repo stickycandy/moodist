@@ -40,7 +40,7 @@ class MoodistApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => PomodoroState()),
       ],
       child: MaterialApp(
-        title: 'Moodist',
+        title: 'Ting',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal, brightness: Brightness.light),

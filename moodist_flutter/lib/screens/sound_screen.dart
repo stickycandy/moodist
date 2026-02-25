@@ -14,7 +14,7 @@ class SoundScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Moodist'),
+        title: const Text('Ting'),
         actions: [
           IconButton(
             icon: const Icon(Icons.share),
