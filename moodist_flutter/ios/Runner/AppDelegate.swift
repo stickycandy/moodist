@@ -20,6 +20,7 @@ import AVFoundation
   
   private func configurePlatformChannel() {
     guard let controller = window?.rootViewController as? FlutterViewController else {
+      print("Failed to get FlutterViewController")
       return
     }
     
@@ -28,11 +29,12 @@ import AVFoundation
       binaryMessenger: controller.binaryMessenger
     )
     
-    channel.setMethodCallHandler { [weak self] (call, result) in
-      if call.method == "getIOSVersion" {
+    channel.setMethodCallHandler { (call, result) in
+      switch call.method {
+      case "getIOSVersion":
         let version = ProcessInfo.processInfo.operatingSystemVersion
         result(version.majorVersion)
-      } else {
+      default:
         result(FlutterMethodNotImplemented)
       }
     }

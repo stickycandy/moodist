@@ -6,6 +6,7 @@ import '../models/sound.dart';
 import '../data/sound_catalog.dart';
 import '../providers/sound_state.dart';
 import '../providers/preset_state.dart';
+import '../widgets/center_toast.dart';
 
 class SoundScreen extends StatelessWidget {
   const SoundScreen({super.key});
@@ -32,8 +33,11 @@ class SoundScreen extends StatelessWidget {
           if (err != null && context.mounted) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (!context.mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(err), duration: const Duration(seconds: 5)),
+              CenterToast.show(
+                context,
+                message: err,
+                icon: Icons.error_outline,
+                duration: const Duration(seconds: 3),
               );
               state.clearPlayError();
             });
@@ -76,7 +80,7 @@ class SoundScreen extends StatelessWidget {
       }
     }
     if (map.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请先选择一些声音')));
+      CenterToast.show(context, message: '请先选择一些声音', icon: Icons.music_off_outlined);
       return;
     }
     Share.share('Moodist 声音组合：\n${jsonEncode(map)}\n可在 Moodist 中通过分享链接导入。');
@@ -93,7 +97,7 @@ class SoundScreen extends StatelessWidget {
       }
     }
     if (map.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请先选择一些声音')));
+      CenterToast.show(context, message: '请先选择一些声音', icon: Icons.music_off_outlined);
       return;
     }
     final controller = TextEditingController();
@@ -114,7 +118,7 @@ class SoundScreen extends StatelessWidget {
               if (name.isNotEmpty) {
                 presetState.addPreset(name, map);
                 Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已保存')));
+                CenterToast.show(context, message: '已保存', icon: Icons.check_circle_outline);
               }
             },
             child: const Text('保存'),

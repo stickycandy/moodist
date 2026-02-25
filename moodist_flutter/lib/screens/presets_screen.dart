@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/sound_state.dart';
 import '../providers/preset_state.dart';
+import '../widgets/center_toast.dart';
 
 class PresetsScreen extends StatelessWidget {
   const PresetsScreen({super.key});
@@ -156,7 +157,7 @@ class _PresetsList extends StatelessWidget {
               presetState.deletePreset(id);
               Navigator.pop(ctx);
               if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已删除')));
+                CenterToast.show(context, message: '已删除', icon: Icons.delete_outline);
               }
             },
             child: const Text('删除'),
@@ -192,9 +193,7 @@ class _PresetCard extends StatelessWidget {
         onTap: () {
           context.read<SoundState>().applySounds(preset.sounds);
           context.read<SoundState>().play();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('已加载并播放')),
-          );
+          CenterToast.show(context, message: '已加载并播放', icon: Icons.play_circle_outline);
         },
         borderRadius: BorderRadius.circular(16),
         child: Padding(

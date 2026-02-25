@@ -35,12 +35,10 @@ class AdaptiveTabBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final platformService = PlatformService();
-    
-    // iOS 平台
-    if (Platform.isIOS) {
-      // iOS 26+ 使用 Liquid Glass 风格
-      if (platformService.isIOS26OrAbove) {
+    try {
+      // iOS 平台
+      if (Platform.isIOS) {
+        // 始终使用 Liquid Glass 风格（因为目标设备是 iOS 26）
         return LiquidGlassTabBar(
           selectedIndex: selectedIndex,
           onTap: onTap,
@@ -50,16 +48,8 @@ class AdaptiveTabBar extends StatelessWidget {
           )).toList(),
         );
       }
-      
-      // iOS <26 使用 CupertinoTabBar
-      return CupertinoTabBar(
-        currentIndex: selectedIndex,
-        onTap: onTap,
-        items: items.map((item) => BottomNavigationBarItem(
-          icon: Icon(item.icon),
-          label: item.label,
-        )).toList(),
-      );
+    } catch (e) {
+      // 平台检测失败，使用 Material 风格
     }
     
     // Android/其他平台使用 Material NavigationBar

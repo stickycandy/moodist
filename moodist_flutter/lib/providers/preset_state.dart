@@ -29,10 +29,10 @@ class PresetState extends ChangeNotifier {
   }
 
   Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_key);
-    if (raw != null) {
-      try {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_key);
+      if (raw != null) {
         final list = jsonDecode(raw) as List<dynamic>?;
         if (list != null) {
           _presets.clear();
@@ -40,9 +40,13 @@ class PresetState extends ChangeNotifier {
             if (e is Map<String, dynamic>) _presets.add(Preset.fromJson(e));
           }
         }
-      } catch (_) {}
+      }
+      notifyListeners();
+    } catch (e) {
+      if (kDebugMode) {
+        print('PresetState._load error: $e');
+      }
     }
-    notifyListeners();
   }
 
   Future<void> _save() async {

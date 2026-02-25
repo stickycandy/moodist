@@ -40,13 +40,25 @@ class SoundEntry {
 /// 支持后台播放和可靠的睡眠定时控制
 class SoundState extends ChangeNotifier with WidgetsBindingObserver {
   SoundState() {
-    _loadFromPrefs();
-    _initCatalog();
-    _restoreSleepTimerState();
-    // 注册生命周期观察者
-    WidgetsBinding.instance.addObserver(this);
-    // 注册通知回调
-    NotificationService().onSleepTimerFired = _onSleepTimerNotificationFired;
+    _init();
+  }
+
+  Future<void> _init() async {
+    try {
+      await _loadFromPrefs();
+      _initCatalog();
+      await _restoreSleepTimerState();
+      // 注册生命周期观察者（延迟到下一帧确保 binding 就绪）
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        WidgetsBinding.instance.addObserver(this);
+      });
+      // 注册通知回调
+      NotificationService().onSleepTimerFired = _onSleepTimerNotificationFired;
+    } catch (e) {
+      if (kDebugMode) {
+        print('SoundState._init error: $e');
+      }
+    }
   }
 
   static const _prefsKey = 'moodist_sound_state';

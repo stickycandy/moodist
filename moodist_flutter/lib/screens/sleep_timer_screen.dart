@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/sound_state.dart';
 import '../services/notification_service.dart';
+import '../widgets/center_toast.dart';
 
 class SleepTimerScreen extends StatelessWidget {
   const SleepTimerScreen({super.key});
@@ -115,9 +116,7 @@ class _ActiveTimerContent extends StatelessWidget {
             FilledButton.tonalIcon(
               onPressed: () {
                 state.cancelSleepTimer();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('已取消睡眠定时')),
-                );
+                CenterToast.show(context, message: '已取消睡眠定时', icon: Icons.timer_off_outlined);
               },
               icon: const Icon(Icons.timer_off_outlined),
               label: const Text('取消定时'),
@@ -225,19 +224,17 @@ class _TimerButton extends StatelessWidget {
     final granted = await NotificationService().requestPermissions();
     if (!granted && context.mounted) {
       // 提示用户权限重要性，但仍允许使用（前台仍可工作）
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('未授予通知权限，后台定时可能不准确'),
-          duration: Duration(seconds: 3),
-        ),
+      CenterToast.show(
+        context,
+        message: '未授予通知权限，后台定时可能不准确',
+        icon: Icons.notifications_off_outlined,
+        duration: const Duration(seconds: 3),
       );
     }
     
     state.setSleepTimer(Duration(minutes: minutes));
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已设置 $label 后停止播放')),
-      );
+      CenterToast.show(context, message: '已设置 $label 后停止播放', icon: Icons.bedtime_outlined);
     }
   }
 
