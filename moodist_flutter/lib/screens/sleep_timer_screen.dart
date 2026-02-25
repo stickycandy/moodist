@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/sound_state.dart';
+import '../services/notification_service.dart';
 
 class SleepTimerScreen extends StatelessWidget {
   const SleepTimerScreen({super.key});
@@ -31,9 +32,25 @@ class _ActiveTimerContent extends StatelessWidget {
 
   final SoundState state;
 
+  /// 格式化剩余时间为 mm:ss 或 hh:mm:ss
+  String _formatRemainingTime(Duration? duration) {
+    if (duration == null) return '--:--';
+    
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    final seconds = duration.inSeconds.remainder(60);
+    
+    if (hours > 0) {
+      return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    }
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final remaining = state.remainingTime;
+    
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -41,25 +58,53 @@ class _ActiveTimerContent extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
                 color: theme.colorScheme.primaryContainer.withOpacity(0.5),
                 shape: BoxShape.circle,
               ),
               child: Icon(
                 Icons.nightlight_round,
-                size: 64,
+                size: 72,
                 color: theme.colorScheme.onPrimaryContainer,
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 32),
             Text(
-              '定时已开启',
+              '睡眠定时进行中',
               style: theme.textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 16),
+            // 倒计时显示
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    '剩余时间',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _formatRemainingTime(remaining),
+                    style: theme.textTheme.displaySmall?.copyWith(
+                      fontWeight: FontWeight.w300,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
             Text(
               '到时将自动停止播放',
               style: theme.textTheme.bodyMedium?.copyWith(
@@ -112,6 +157,7 @@ class _DurationSelector extends StatelessWidget {
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w600,
             ),
+            textAlign: TextAlign.center,
           ),
           const SizedBox(height: 4),
           Text(
@@ -119,6 +165,7 @@ class _DurationSelector extends StatelessWidget {
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
+            textAlign: TextAlign.center,
           ),
           const SizedBox(height: 28),
           _TimerButton(
@@ -173,6 +220,27 @@ class _TimerButton extends StatelessWidget {
   final IconData icon;
   final bool isLast;
 
+  Future<void> _setTimer(BuildContext context) async {
+    // 首次使用时请求通知权限（用于后台定时）
+    final granted = await NotificationService().requestPermissions();
+    if (!granted && context.mounted) {
+      // 提示用户权限重要性，但仍允许使用（前台仍可工作）
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('未授予通知权限，后台定时可能不准确'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    }
+    
+    state.setSleepTimer(Duration(minutes: minutes));
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已设置 $label 后停止播放')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -182,12 +250,7 @@ class _TimerButton extends StatelessWidget {
         color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
         borderRadius: BorderRadius.circular(16),
         child: InkWell(
-          onTap: () {
-            state.setSleepTimer(Duration(minutes: minutes));
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('已设置 $label 后停止播放')),
-            );
-          },
+          onTap: () => _setTimer(context),
           borderRadius: BorderRadius.circular(16),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),

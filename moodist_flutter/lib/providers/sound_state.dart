@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
 import '../data/sound_catalog.dart';
 import '../models/sound.dart';
+import '../services/notification_service.dart';
 import 'asset_url_loader_stub.dart' if (dart.library.html) 'asset_url_loader_web.dart' as asset_loader;
 
 /// 单音状态：是否选中、音量、是否收藏
@@ -34,20 +36,34 @@ class SoundEntry {
 }
 
 /// 声音播放与混音状态（与 Web 版逻辑一致）
-class SoundState extends ChangeNotifier {
+/// 
+/// 支持后台播放和可靠的睡眠定时控制
+class SoundState extends ChangeNotifier with WidgetsBindingObserver {
   SoundState() {
     _loadFromPrefs();
     _initCatalog();
+    _restoreSleepTimerState();
+    // 注册生命周期观察者
+    WidgetsBinding.instance.addObserver(this);
+    // 注册通知回调
+    NotificationService().onSleepTimerFired = _onSleepTimerNotificationFired;
   }
 
   static const _prefsKey = 'moodist_sound_state';
+  static const _sleepTimerPrefsKey = 'moodist_sleep_timer_end';
+  
   final Map<String, SoundEntry> _entries = {};
   final Map<String, AudioPlayer> _players = {};
   final List<SoundCategory> _categories = getSoundCategories();
   double _globalVolume = 1.0;
   bool _isPlaying = false;
   bool _locked = false;
+  
+  // 睡眠定时：记录结束时间而非 Timer，支持后台恢复
   Timer? _sleepTimer;
+  DateTime? _sleepEndTime;
+  Timer? _remainingTimeUpdateTimer;  // 用于 UI 倒计时更新
+  
   String? _lastPlayError;
 
   List<SoundCategory> get categories => _categories;
@@ -66,6 +82,16 @@ class SoundState extends ChangeNotifier {
 
   SoundEntry entry(String soundId) =>
       _entries[soundId] ?? SoundEntry();
+
+  /// 睡眠定时剩余时间
+  Duration? get remainingTime {
+    if (_sleepEndTime == null) return null;
+    final remaining = _sleepEndTime!.difference(DateTime.now());
+    return remaining.isNegative ? Duration.zero : remaining;
+  }
+
+  /// 睡眠定时结束时间
+  DateTime? get sleepEndTime => _sleepEndTime;
 
   void _initCatalog() {
     for (final cat in _categories) {
@@ -102,6 +128,84 @@ class SoundState extends ChangeNotifier {
     }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_prefsKey, jsonEncode(map));
+  }
+
+  /// 恢复睡眠定时状态（App 重启或从后台恢复时）
+  Future<void> _restoreSleepTimerState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final endTimeMs = prefs.getInt(_sleepTimerPrefsKey);
+    if (endTimeMs == null) return;
+    
+    final endTime = DateTime.fromMillisecondsSinceEpoch(endTimeMs);
+    final now = DateTime.now();
+    
+    if (endTime.isAfter(now)) {
+      // 定时还未结束，重新设置
+      _sleepEndTime = endTime;
+      _startSleepTimer(endTime.difference(now));
+      if (kDebugMode) {
+        print('SoundState: Restored sleep timer, remaining: ${endTime.difference(now)}');
+      }
+    } else {
+      // 定时已过期，清理
+      await prefs.remove(_sleepTimerPrefsKey);
+    }
+  }
+
+  /// 保存睡眠定时状态
+  Future<void> _saveSleepTimerState() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_sleepEndTime != null) {
+      await prefs.setInt(_sleepTimerPrefsKey, _sleepEndTime!.millisecondsSinceEpoch);
+    } else {
+      await prefs.remove(_sleepTimerPrefsKey);
+    }
+  }
+
+  /// App 生命周期回调
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.resumed:
+        _onAppResumed();
+        break;
+      case AppLifecycleState.paused:
+        _onAppPaused();
+        break;
+      default:
+        break;
+    }
+  }
+
+  /// App 恢复前台时
+  void _onAppResumed() {
+    if (_sleepEndTime != null) {
+      final remaining = _sleepEndTime!.difference(DateTime.now());
+      if (remaining.isNegative || remaining == Duration.zero) {
+        // 定时已到，执行暂停
+        _onSleepTimerFired();
+      } else {
+        // 重建 Timer
+        _startSleepTimer(remaining);
+      }
+    }
+    if (kDebugMode) {
+      print('SoundState: App resumed, sleepEndTime=$_sleepEndTime');
+    }
+  }
+
+  /// App 进入后台时
+  void _onAppPaused() {
+    // Timer 在后台可能不可靠，依赖 Local Notification
+    // 已在 setSleepTimer 时安排了通知
+    if (kDebugMode) {
+      print('SoundState: App paused, sleepEndTime=$_sleepEndTime');
+    }
+  }
+
+  /// 通知触发时的回调
+  void _onSleepTimerNotificationFired() {
+    _onSleepTimerFired();
   }
 
   void setGlobalVolume(double v) {
@@ -270,34 +374,88 @@ class SoundState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 设置睡眠定时器
+  /// 
+  /// 改进版：记录结束时间，支持后台恢复，并安排本地通知作为 fallback
   void setSleepTimer(Duration? duration) {
     _sleepTimer?.cancel();
+    _remainingTimeUpdateTimer?.cancel();
+    
     if (duration == null || duration.inSeconds <= 0) {
+      _sleepEndTime = null;
       _sleepTimer = null;
+      _remainingTimeUpdateTimer = null;
+      _saveSleepTimerState();
+      NotificationService().cancelSleepTimerNotification();
       notifyListeners();
       return;
     }
-    _sleepTimer = Timer(duration, () {
-      pause();
-      _sleepTimer = null;
-      notifyListeners();
-    });
+    
+    // 记录结束时间（关键：用于后台恢复）
+    _sleepEndTime = DateTime.now().add(duration);
+    _saveSleepTimerState();
+    
+    // 安排本地通知作为后台 fallback
+    NotificationService().scheduleSleepTimerNotification(_sleepEndTime!);
+    
+    // 启动前台 Timer
+    _startSleepTimer(duration);
+    
     notifyListeners();
+  }
+
+  /// 启动睡眠定时器（内部方法）
+  void _startSleepTimer(Duration duration) {
+    _sleepTimer?.cancel();
+    _remainingTimeUpdateTimer?.cancel();
+    
+    _sleepTimer = Timer(duration, _onSleepTimerFired);
+    
+    // 启动 UI 更新定时器（每秒更新剩余时间）
+    _remainingTimeUpdateTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => notifyListeners(),
+    );
+  }
+
+  /// 睡眠定时器触发时
+  void _onSleepTimerFired() {
+    pause();
+    _sleepEndTime = null;
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+    _remainingTimeUpdateTimer?.cancel();
+    _remainingTimeUpdateTimer = null;
+    _saveSleepTimerState();
+    NotificationService().cancelSleepTimerNotification();
+    notifyListeners();
+    
+    if (kDebugMode) {
+      print('SoundState: Sleep timer fired, audio paused');
+    }
   }
 
   void cancelSleepTimer() {
     _sleepTimer?.cancel();
     _sleepTimer = null;
+    _sleepEndTime = null;
+    _remainingTimeUpdateTimer?.cancel();
+    _remainingTimeUpdateTimer = null;
+    _saveSleepTimerState();
+    NotificationService().cancelSleepTimerNotification();
     notifyListeners();
   }
 
   bool get hasSleepTimer {
-    return _sleepTimer != null;
+    return _sleepEndTime != null;
   }
 
   @override
   void dispose() {
+    // 移除生命周期观察者
+    WidgetsBinding.instance.removeObserver(this);
     _sleepTimer?.cancel();
+    _remainingTimeUpdateTimer?.cancel();
     if (kIsWeb) {
       asset_loader.revokeAllAssetAudioUrls();
     }
@@ -307,4 +465,3 @@ class SoundState extends ChangeNotifier {
     super.dispose();
   }
 }
-

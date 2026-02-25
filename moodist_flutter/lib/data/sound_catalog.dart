@@ -1,6 +1,6 @@
 import '../models/sound.dart';
 
-const String _prefix = 'assets/sounds';
+const String _prefix = 'sounds';
 
 List<SoundCategory> getSoundCategories() {
   return [

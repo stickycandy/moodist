@@ -10,9 +10,19 @@ import 'screens/presets_screen.dart';
 import 'screens/sleep_timer_screen.dart';
 import 'screens/pomodoro_screen.dart';
 import 'screens/todo_screen.dart';
+import 'services/notification_service.dart';
+import 'services/platform_service.dart';
+import 'widgets/adaptive_tab_bar.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // 初始化通知服务（用于后台定时）
+  await NotificationService().initialize();
+  
+  // 初始化平台服务（用于 iOS 版本检测）
+  await PlatformService().initialize();
+  
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp, DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
   runApp(const MoodistApp());
 }
@@ -77,10 +87,10 @@ class _MainShellState extends State<MainShell> {
           TodoScreen(),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
+      bottomNavigationBar: AdaptiveTabBar(
         selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
-        destinations: _tabs.map((t) => NavigationDestination(icon: Icon(t.icon), label: t.label)).toList(),
+        onTap: (i) => setState(() => _index = i),
+        items: _tabs.map((t) => AdaptiveTabItem(icon: t.icon, label: t.label)).toList(),
       ),
     );
   }
