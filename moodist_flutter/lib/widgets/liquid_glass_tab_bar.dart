@@ -1,6 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:flutter/physics.dart';
+import 'package:flutter/scheduler.dart';
 
 /// Liquid Glass Tab Bar 的单个项目配置
 class LiquidGlassTabItem {
@@ -14,13 +14,6 @@ class LiquidGlassTabItem {
 }
 
 /// iOS 26 液态玻璃风格底部导航栏
-///
-/// 特性：
-/// - 浮动大圆角卡片样式
-/// - 选中项使用 iOS 26 Liquid Glass 毛玻璃效果
-/// - 切换时指示器带弹性放大回弹动画（类似 iOS 26 原生）
-/// - 图标 + 文字双行显示
-/// - Light/Dark 模式自动适配
 class LiquidGlassTabBar extends StatefulWidget {
   final int selectedIndex;
   final ValueChanged<int> onTap;
@@ -49,7 +42,12 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
   static const _indicatorHorizontalPadding = 5.0;
   static const _indicatorBorderRadius = 22.0;
 
-  // 位置滑动动画
+  // 弹性跟随的平滑因子 (越小越滞后，0.08~0.15 手感较好)
+  static const _smoothFactor = 0.12;
+  // 吸附阈值：气泡与目标距离小于此值时视为到达
+  static const _snapThreshold = 0.5;
+
+  // 位置滑动动画（点击切换用）
   late AnimationController _slideController;
   late Animation<double> _slideAnimation;
   double _prevLeft = 0;
@@ -65,11 +63,19 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
 
   bool _isFirstBuild = true;
 
+  // ---- 拖拽跟手状态 ----
+  bool _isDragging = false;
+  Ticker? _dragTicker;
+  double _fingerTargetLeft = 0;  // 手指实际位置（目标）
+  double _fingerTargetPage = 0;  // 手指位置对应的 page 值
+  double _bubbleCurrentLeft = 0; // 气泡当前位置（滞后追赶中）
+  double _bubbleCurrentPage = 0; // 气泡当前 page 值
+
   @override
   void initState() {
     super.initState();
 
-    // 位置滑动 - 使用自定义弹簧曲线
+    // 位置滑动
     _slideController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 500),
@@ -78,31 +84,27 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
       CurveTween(curve: Curves.easeOutCubic),
     );
 
-    // 指示器弹性缩放 - 先放大再弹回
+    // 指示器弹性缩放
     _bounceController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 600),
     );
     _bounceAnimation = TweenSequence<double>([
-      // 快速放大
       TweenSequenceItem(
         tween: Tween(begin: 1.0, end: 1.12)
             .chain(CurveTween(curve: Curves.easeOut)),
         weight: 25,
       ),
-      // 弹性回弹 - 过冲后稳定
       TweenSequenceItem(
         tween: Tween(begin: 1.12, end: 0.96)
             .chain(CurveTween(curve: Curves.easeInOut)),
         weight: 25,
       ),
-      // 轻微反弹
       TweenSequenceItem(
         tween: Tween(begin: 0.96, end: 1.03)
             .chain(CurveTween(curve: Curves.easeInOut)),
         weight: 25,
       ),
-      // 回归原始
       TweenSequenceItem(
         tween: Tween(begin: 1.03, end: 1.0)
             .chain(CurveTween(curve: Curves.easeOut)),
@@ -141,6 +143,7 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
 
   @override
   void dispose() {
+    _dragTicker?.dispose();
     _slideController.dispose();
     _bounceController.dispose();
     _iconBounceController.dispose();
@@ -150,36 +153,47 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
   @override
   void didUpdateWidget(covariant LiquidGlassTabBar oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.selectedIndex != widget.selectedIndex) {
+    if (oldWidget.selectedIndex != widget.selectedIndex && !_isDragging) {
       _animateToIndex(widget.selectedIndex);
     }
   }
 
-  void _animateToIndex(int index) {
-    final barWidth = MediaQuery.of(context).size.width - _barHorizontalMargin * 2;
-    final itemWidth = barWidth / widget.items.length;
-    final newLeft = index * itemWidth + _indicatorHorizontalPadding;
+  // ---- 辅助计算 ----
 
+  double get _barWidth =>
+      MediaQuery.of(context).size.width - _barHorizontalMargin * 2;
+
+  double get _itemWidth => _barWidth / widget.items.length;
+
+  double _leftForIndex(int index) =>
+      index * _itemWidth + _indicatorHorizontalPadding;
+
+  double _leftForPage(double page) =>
+      page * _itemWidth + _indicatorHorizontalPadding;
+
+  double _pageForLocalX(double localX) {
+    return (localX / _itemWidth).clamp(0.0, widget.items.length - 1.0);
+  }
+
+  // ---- 点击切换动画 ----
+
+  void _animateToIndex(int index) {
+    final newLeft = _leftForIndex(index);
     _prevLeft = _targetLeft;
     _targetLeft = newLeft;
 
-    // 重置并启动位置动画
     _slideController.reset();
     _slideController.forward();
 
-    // 重置并启动弹性缩放
     _bounceController.reset();
     _bounceController.forward();
 
-    // 重置并启动图标弹性
     _iconBounceController.reset();
     _iconBounceController.forward();
   }
 
   double _computeIndicatorLeft() {
-    final barWidth = MediaQuery.of(context).size.width - _barHorizontalMargin * 2;
-    final itemWidth = barWidth / widget.items.length;
-    final targetLeft = widget.selectedIndex * itemWidth + _indicatorHorizontalPadding;
+    final targetLeft = _leftForIndex(widget.selectedIndex);
 
     if (_isFirstBuild) {
       _prevLeft = targetLeft;
@@ -188,9 +202,112 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
       return targetLeft;
     }
 
-    // 使用 lerpDouble 根据动画进度插值
-    return lerpDouble(_prevLeft, _targetLeft, _slideAnimation.value) ?? targetLeft;
+    return lerpDouble(_prevLeft, _targetLeft, _slideAnimation.value) ??
+        targetLeft;
   }
+
+  // ---- 拖拽手势 + Ticker 驱动的弹性跟随 ----
+
+  void _startDragTicker() {
+    _dragTicker?.dispose();
+    _dragTicker = createTicker(_onDragTick);
+    _dragTicker!.start();
+  }
+
+  void _stopDragTicker() {
+    _dragTicker?.stop();
+    _dragTicker?.dispose();
+    _dragTicker = null;
+  }
+
+  void _onDragTick(Duration elapsed) {
+    if (!_isDragging) return;
+
+    // 指数平滑插值：气泡每帧靠近手指目标一点
+    final diffLeft = _fingerTargetLeft - _bubbleCurrentLeft;
+    final diffPage = _fingerTargetPage - _bubbleCurrentPage;
+
+    if (diffLeft.abs() < _snapThreshold && diffPage.abs() < 0.01) {
+      // 足够近，直接吸附
+      _bubbleCurrentLeft = _fingerTargetLeft;
+      _bubbleCurrentPage = _fingerTargetPage;
+    } else {
+      _bubbleCurrentLeft += diffLeft * _smoothFactor;
+      _bubbleCurrentPage += diffPage * _smoothFactor;
+    }
+
+    setState(() {});
+  }
+
+  void _onHorizontalDragStart(DragStartDetails details) {
+    _slideController.stop();
+
+    final localX = details.localPosition.dx;
+    final page = _pageForLocalX(localX);
+    final left = _leftForPage(page);
+
+    // 气泡从当前实际显示位置开始追赶
+    final currentIndicatorLeft =
+        _isDragging ? _bubbleCurrentLeft : _computeIndicatorLeft();
+    final currentIndicatorPage = _isDragging
+        ? _bubbleCurrentPage
+        : widget.selectedIndex.toDouble();
+
+    setState(() {
+      _isDragging = true;
+      _fingerTargetLeft = left;
+      _fingerTargetPage = page;
+      _bubbleCurrentLeft = currentIndicatorLeft;
+      _bubbleCurrentPage = currentIndicatorPage;
+    });
+
+    _startDragTicker();
+  }
+
+  void _onHorizontalDragUpdate(DragUpdateDetails details) {
+    final localX = details.localPosition.dx;
+    final page = _pageForLocalX(localX);
+    _fingerTargetLeft = _leftForPage(page);
+    _fingerTargetPage = page;
+  }
+
+  void _onHorizontalDragEnd(DragEndDetails details) {
+    _stopDragTicker();
+
+    // 吸附到最近的 tab
+    final nearestIndex =
+        _bubbleCurrentPage.round().clamp(0, widget.items.length - 1);
+
+    setState(() {
+      _isDragging = false;
+      // 从气泡当前位置动画到目标 tab
+      _prevLeft = _bubbleCurrentLeft;
+      _targetLeft = _leftForIndex(nearestIndex);
+    });
+
+    _slideController.reset();
+    _slideController.forward();
+
+    // 松手弹性动画
+    _bounceController.reset();
+    _bounceController.forward();
+
+    _iconBounceController.reset();
+    _iconBounceController.forward();
+
+    if (nearestIndex != widget.selectedIndex) {
+      widget.onTap(nearestIndex);
+    }
+  }
+
+  void _onHorizontalDragCancel() {
+    _stopDragTicker();
+    setState(() {
+      _isDragging = false;
+    });
+  }
+
+  // ---- 构建 UI ----
 
   @override
   Widget build(BuildContext context) {
@@ -203,50 +320,49 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
         right: _barHorizontalMargin,
         bottom: bottomPadding > 0 ? bottomPadding : 12.0,
       ),
-      child: Container(
-        height: _tabBarHeight,
-        decoration: BoxDecoration(
-          // 整体背景 - 半透明深色，让底部内容微微透出
-          color: isDark
-              ? const Color(0xE01C1C1E)
-              : const Color(0xDDF5F5F7),
-          borderRadius: BorderRadius.circular(_barBorderRadius),
-          // 外边框 - 模拟玻璃边缘
-          border: Border.all(
+      child: GestureDetector(
+        onHorizontalDragStart: _onHorizontalDragStart,
+        onHorizontalDragUpdate: _onHorizontalDragUpdate,
+        onHorizontalDragEnd: _onHorizontalDragEnd,
+        onHorizontalDragCancel: _onHorizontalDragCancel,
+        child: Container(
+          height: _tabBarHeight,
+          decoration: BoxDecoration(
             color: isDark
-                ? Colors.white.withOpacity(0.08)
-                : Colors.white.withOpacity(0.6),
-            width: 0.5,
-          ),
-          boxShadow: [
-            // 主阴影
-            BoxShadow(
-              color: Colors.black.withOpacity(isDark ? 0.4 : 0.12),
-              blurRadius: 24,
-              offset: const Offset(0, 8),
-              spreadRadius: -2,
+                ? const Color(0xE01C1C1E)
+                : const Color(0xDDF5F5F7),
+            borderRadius: BorderRadius.circular(_barBorderRadius),
+            border: Border.all(
+              color: isDark
+                  ? Colors.white.withOpacity(0.08)
+                  : Colors.white.withOpacity(0.6),
+              width: 0.5,
             ),
-            // 近距阴影
-            BoxShadow(
-              color: Colors.black.withOpacity(isDark ? 0.2 : 0.06),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-              spreadRadius: 0,
-            ),
-          ],
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: BackdropFilter(
-          // 整体 bar 也有轻微的毛玻璃效果
-          filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              // 选中项液态玻璃指示器
-              _buildLiquidGlassIndicator(context, isDark),
-              // Tab 项
-              _buildTabItems(context, isDark),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(isDark ? 0.4 : 0.12),
+                blurRadius: 24,
+                offset: const Offset(0, 8),
+                spreadRadius: -2,
+              ),
+              BoxShadow(
+                color: Colors.black.withOpacity(isDark ? 0.2 : 0.06),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+                spreadRadius: 0,
+              ),
             ],
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                _buildLiquidGlassIndicator(context, isDark),
+                _buildTabItems(context, isDark),
+              ],
+            ),
           ),
         ),
       ),
@@ -254,16 +370,14 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
   }
 
   Widget _buildLiquidGlassIndicator(BuildContext context, bool isDark) {
-    final barWidth =
-        MediaQuery.of(context).size.width - _barHorizontalMargin * 2;
-    final itemWidth = barWidth / widget.items.length;
-    final indicatorWidth = itemWidth - _indicatorHorizontalPadding * 2;
+    final indicatorWidth = _itemWidth - _indicatorHorizontalPadding * 2;
     final indicatorHeight = _tabBarHeight - _indicatorVerticalPadding * 2;
 
     return AnimatedBuilder(
       animation: Listenable.merge([_slideController, _bounceController]),
       builder: (context, child) {
-        final left = _computeIndicatorLeft();
+        // 拖拽时直接用 _dragLeft，否则用动画计算的位置
+        final left = _isDragging ? _bubbleCurrentLeft : _computeIndicatorLeft();
         final scale = _bounceAnimation.value;
 
         return Positioned(
@@ -280,7 +394,6 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
         height: indicatorHeight,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(_indicatorBorderRadius),
-          // Liquid Glass 多层效果
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
@@ -294,16 +407,13 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
                     Colors.white.withOpacity(0.55),
                   ],
           ),
-          // 玻璃高光边框
           border: Border.all(
             color: isDark
                 ? Colors.white.withOpacity(0.25)
                 : Colors.white.withOpacity(0.9),
             width: 0.5,
           ),
-          // 玻璃阴影
           boxShadow: [
-            // 外发光
             BoxShadow(
               color: isDark
                   ? Colors.white.withOpacity(0.05)
@@ -311,7 +421,6 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
               blurRadius: 12,
               spreadRadius: 0,
             ),
-            // 底部阴影（让指示器浮起来）
             BoxShadow(
               color: Colors.black.withOpacity(isDark ? 0.2 : 0.08),
               blurRadius: 8,
@@ -323,12 +432,10 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
         child: ClipRRect(
           borderRadius: BorderRadius.circular(_indicatorBorderRadius),
           child: BackdropFilter(
-            // 液态玻璃的模糊效果
             filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
             child: Container(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(_indicatorBorderRadius),
-                // 顶部高光 - 模拟 iOS 26 液态玻璃的光泽
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.center,
@@ -346,12 +453,19 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
   }
 
   Widget _buildTabItems(BuildContext context, bool isDark) {
+    // 拖拽时使用连续的 page 值来计算颜色过渡
+    final currentPage =
+        _isDragging ? _bubbleCurrentPage : widget.selectedIndex.toDouble();
+
     return Row(
       children: List.generate(widget.items.length, (index) {
         final item = widget.items[index];
         final isSelected = index == widget.selectedIndex;
 
-        // 动态颜色
+        // 根据距离当前位置的远近计算接近程度 (0.0 ~ 1.0)
+        final double proximity =
+            (1.0 - (currentPage - index).abs()).clamp(0.0, 1.0);
+
         final Color activeColor;
         final Color inactiveColor;
         if (isDark) {
@@ -362,6 +476,12 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
           inactiveColor = const Color(0xFF8E8E93);
         }
 
+        // 颜色随接近程度平滑过渡
+        final color = Color.lerp(inactiveColor, activeColor, proximity)!;
+        final fontWeight =
+            proximity > 0.5 ? FontWeight.w600 : FontWeight.w400;
+        final iconScale = 1.0 + proximity * 0.08;
+
         return Expanded(
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
@@ -371,19 +491,15 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // 选中图标带弹性动画
-                  _buildAnimatedIcon(item, isSelected, activeColor, inactiveColor),
+                  _buildIcon(item, isSelected, color, iconScale),
                   const SizedBox(height: 2),
-                  AnimatedDefaultTextStyle(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeOutCubic,
+                  Text(
+                    item.label,
                     style: TextStyle(
                       fontSize: 10,
-                      fontWeight:
-                          isSelected ? FontWeight.w600 : FontWeight.w400,
-                      color: isSelected ? activeColor : inactiveColor,
+                      fontWeight: fontWeight,
+                      color: color,
                     ),
-                    child: Text(item.label),
                   ),
                 ],
               ),
@@ -394,38 +510,29 @@ class _LiquidGlassTabBarState extends State<LiquidGlassTabBar>
     );
   }
 
-  Widget _buildAnimatedIcon(
+  Widget _buildIcon(
     LiquidGlassTabItem item,
     bool isSelected,
-    Color activeColor,
-    Color inactiveColor,
+    Color color,
+    double scale,
   ) {
-    if (!isSelected) {
-      return AnimatedScale(
-        scale: 1.0,
-        duration: const Duration(milliseconds: 250),
-        child: Icon(
-          item.icon,
-          size: 24,
-          color: inactiveColor,
-        ),
+    // 点击切换时，选中图标播放弹性动画
+    if (isSelected && !_isDragging && _iconBounceController.isAnimating) {
+      return AnimatedBuilder(
+        animation: _iconBounceController,
+        builder: (context, child) {
+          return Transform.scale(
+            scale: _iconBounceAnimation.value,
+            child: child,
+          );
+        },
+        child: Icon(item.icon, size: 24, color: color),
       );
     }
 
-    // 选中项使用弹性动画
-    return AnimatedBuilder(
-      animation: _iconBounceController,
-      builder: (context, child) {
-        return Transform.scale(
-          scale: _iconBounceAnimation.value,
-          child: child,
-        );
-      },
-      child: Icon(
-        item.icon,
-        size: 24,
-        color: activeColor,
-      ),
+    return Transform.scale(
+      scale: scale,
+      child: Icon(item.icon, size: 24, color: color),
     );
   }
 }

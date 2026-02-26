@@ -112,7 +112,7 @@ class NotificationService {
 
     await _notifications.zonedSchedule(
       sleepTimerNotificationId,
-      'Moodist',
+      'Ting',
       '睡眠定时已结束',
       scheduledDate,
       notificationDetails,

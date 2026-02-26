@@ -83,7 +83,7 @@ class SoundScreen extends StatelessWidget {
       CenterToast.show(context, message: '请先选择一些声音', icon: Icons.music_off_outlined);
       return;
     }
-    Share.share('Moodist 声音组合：\n${jsonEncode(map)}\n可在 Moodist 中通过分享链接导入。');
+    Share.share('Ting 声音组合：\n${jsonEncode(map)}\n可在 Ting 中通过分享链接导入。');
   }
 
   void _showSavePresetDialog(BuildContext context) {
