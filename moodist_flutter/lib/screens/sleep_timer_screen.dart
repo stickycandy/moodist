@@ -82,7 +82,7 @@ class _ActiveTimerContent extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
               decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                color: theme.cardTheme.color,
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Column(
@@ -140,7 +140,7 @@ class _DurationSelector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -244,7 +244,7 @@ class _TimerButton extends StatelessWidget {
     return Padding(
       padding: EdgeInsets.only(bottom: isLast ? 0 : 12),
       child: Material(
-        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
+        color: theme.cardTheme.color,
         borderRadius: BorderRadius.circular(16),
         child: InkWell(
           onTap: () => _setTimer(context),

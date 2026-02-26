@@ -47,7 +47,7 @@ class SoundScreen extends StatelessWidget {
               _GlobalControls(state: state),
               Expanded(
                 child: ListView(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.fromLTRB(8, 8, 8, 100),
                   children: [
                     Slider(
                       value: state.globalVolume,
@@ -136,23 +136,26 @@ class _GlobalControls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    final theme = Theme.of(context);
+    return Container(
       margin: const EdgeInsets.all(8),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            IconButton.filled(
-              icon: Icon(state.isPlaying ? Icons.pause : Icons.play_arrow),
-              onPressed: state.locked ? null : () => state.togglePlay(),
-            ),
-            TextButton(
-              onPressed: state.locked || state.noSelected ? null : () => state.unselectAll(),
-              child: const Text('全部取消'),
-            ),
-          ],
-        ),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.cardTheme.color,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          IconButton.filled(
+            icon: Icon(state.isPlaying ? Icons.pause : Icons.play_arrow),
+            onPressed: state.locked ? null : () => state.togglePlay(),
+          ),
+          TextButton(
+            onPressed: state.locked || state.noSelected ? null : () => state.unselectAll(),
+            child: const Text('全部取消'),
+          ),
+        ],
       ),
     );
   }

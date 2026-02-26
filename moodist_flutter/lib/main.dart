@@ -13,6 +13,8 @@ import 'screens/todo_screen.dart';
 import 'services/notification_service.dart';
 import 'services/platform_service.dart';
 import 'widgets/adaptive_tab_bar.dart';
+import 'widgets/gradient_background.dart';
+import 'theme/app_theme.dart';
 
 void main() {
   // 不使用 async，直接启动
@@ -76,14 +78,8 @@ class _MoodistAppState extends State<MoodistApp> {
       child: MaterialApp(
         title: 'Ting',
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal, brightness: Brightness.light),
-          useMaterial3: true,
-        ),
-        darkTheme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal, brightness: Brightness.dark),
-          useMaterial3: true,
-        ),
+        theme: AppTheme.lightTheme,
+        darkTheme: AppTheme.darkTheme,
         home: const MainShell(),
       ),
     );
@@ -105,39 +101,43 @@ class _MainShellState extends State<MainShell> {
     (icon: Icons.bookmark, label: '预设'),
     (icon: Icons.timer, label: '睡眠'),
     (icon: Icons.work_outline, label: '番茄钟'),
-    (icon: Icons.check_circle_outline, label: '待办'),
+    // TODO: 待办功能暂时隐藏，后续放开
+    // (icon: Icons.check_circle_outline, label: '待办'),
   ];
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Stack(
-        children: [
-          // 页面内容延伸到最底部
-          Positioned.fill(
-            child: IndexedStack(
-              index: _index,
-              children: const [
-                SoundScreen(),
-                PresetsScreen(),
-                SleepTimerScreen(),
-                PomodoroScreen(),
-                TodoScreen(),
-              ],
+    return GradientBackground(
+      child: Scaffold(
+        body: Stack(
+          children: [
+            // 页面内容延伸到最底部
+            Positioned.fill(
+              child: IndexedStack(
+                index: _index,
+                children: const [
+                  SoundScreen(),
+                  PresetsScreen(),
+                  SleepTimerScreen(),
+                  PomodoroScreen(),
+                  // TODO: 待办功能暂时隐藏，后续放开
+                  // TodoScreen(),
+                ],
+              ),
             ),
-          ),
-          // Tab bar 浮动在内容之上
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: AdaptiveTabBar(
-              selectedIndex: _index,
-              onTap: (i) => setState(() => _index = i),
-              items: _tabs.map((t) => AdaptiveTabItem(icon: t.icon, label: t.label)).toList(),
+            // Tab bar 浮动在内容之上
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: AdaptiveTabBar(
+                selectedIndex: _index,
+                onTap: (i) => setState(() => _index = i),
+                items: _tabs.map((t) => AdaptiveTabItem(icon: t.icon, label: t.label)).toList(),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -94,7 +94,7 @@ class _PresetsList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
       itemCount: presets.length,
       itemBuilder: (context, i) {
         final p = presets[i];
@@ -187,7 +187,7 @@ class _PresetCard extends StatelessWidget {
     final count = preset.sounds.length;
 
     return Material(
-      color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
+      color: theme.cardTheme.color,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         onTap: () {

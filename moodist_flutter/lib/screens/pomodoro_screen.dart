@@ -17,7 +17,7 @@ class PomodoroScreen extends StatelessWidget {
         child: Consumer<PomodoroState>(
           builder: (context, state, _) {
             return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 100),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -103,11 +103,11 @@ class _TimerRing extends StatelessWidget {
       height: 220,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
+        color: theme.cardTheme.color,
         border: Border.all(
           color: isRest
-              ? theme.colorScheme.tertiary.withOpacity(0.4)
-              : theme.colorScheme.primary.withOpacity(0.4),
+              ? theme.colorScheme.tertiary.withOpacity(0.5)
+              : theme.colorScheme.primary.withOpacity(0.5),
           width: 6,
         ),
       ),

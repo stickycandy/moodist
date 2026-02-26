@@ -142,7 +142,7 @@ class _AddTodoBarState extends State<_AddTodoBar> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Material(
-        color: widget.theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
+        color: widget.theme.cardTheme.color,
         borderRadius: BorderRadius.circular(16),
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
@@ -222,11 +222,11 @@ class _TodoCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
-      borderRadius: BorderRadius.circular(14),
+      color: theme.cardTheme.color,
+      borderRadius: BorderRadius.circular(16),
       child: InkWell(
         onTap: onToggle,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: Row(
