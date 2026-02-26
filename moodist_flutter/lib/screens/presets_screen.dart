@@ -191,7 +191,7 @@ class _PresetCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         onTap: () {
-          context.read<SoundState>().applySounds(preset.sounds);
+          context.read<SoundState>().applySounds(preset.sounds, presetName: preset.label);
           context.read<SoundState>().play();
           CenterToast.show(context, message: '已加载并播放', icon: Icons.play_circle_outline);
         },

@@ -8,6 +8,7 @@ import 'dart:convert';
 import '../data/sound_catalog.dart';
 import '../models/sound.dart';
 import '../services/notification_service.dart';
+import '../services/now_playing_service.dart';
 import 'asset_url_loader_stub.dart' if (dart.library.html) 'asset_url_loader_web.dart' as asset_loader;
 
 /// 单音状态：是否选中、音量、是否收藏
@@ -54,6 +55,13 @@ class SoundState extends ChangeNotifier with WidgetsBindingObserver {
       });
       // 注册通知回调
       NotificationService().onSleepTimerFired = _onSleepTimerNotificationFired;
+      
+      // 初始化 Now Playing 服务，注册远程控制回调
+      NowPlayingService.init(
+        onRemotePlay: play,
+        onRemotePause: pause,
+        onRemoteToggle: togglePlay,
+      );
     } catch (e) {
       if (kDebugMode) {
         print('SoundState._init error: $e');
@@ -74,7 +82,11 @@ class SoundState extends ChangeNotifier with WidgetsBindingObserver {
   // 睡眠定时：记录结束时间而非 Timer，支持后台恢复
   Timer? _sleepTimer;
   DateTime? _sleepEndTime;
+  DateTime? _sleepStartTime;  // 用于计算已过时间（Now Playing 进度）
   Timer? _remainingTimeUpdateTimer;  // 用于 UI 倒计时更新
+  
+  // 当前预设名称（用于 Now Playing 显示）
+  String? _currentPresetName;
   
   String? _lastPlayError;
 
@@ -91,6 +103,9 @@ class SoundState extends ChangeNotifier with WidgetsBindingObserver {
   bool get locked => _locked;
   bool get noSelected =>
       _entries.values.every((e) => !e.isSelected);
+  
+  /// 当前预设名称（用于 Now Playing 显示）
+  String? get currentPresetName => _currentPresetName;
 
   SoundEntry entry(String soundId) =>
       _entries[soundId] ?? SoundEntry();
@@ -237,15 +252,19 @@ class SoundState extends ChangeNotifier with WidgetsBindingObserver {
   void select(String id) {
     if (_entries[id] == null) return;
     _entries[id]!.isSelected = true;
+    _currentPresetName = null;  // 手动选择声音时清空预设名称
     _playSound(id);
     _saveToPrefs();
+    _updateNowPlaying();
     notifyListeners();
   }
 
   void unselect(String id) {
     _entries[id]?.isSelected = false;
+    _currentPresetName = null;  // 手动取消声音时清空预设名称
     _stopSound(id);
     _saveToPrefs();
+    _updateNowPlaying();
     notifyListeners();
   }
 
@@ -283,6 +302,7 @@ class SoundState extends ChangeNotifier with WidgetsBindingObserver {
         _players[id]?.stop();
       }
     }
+    _updateNowPlaying();
     notifyListeners();
   }
 
@@ -291,6 +311,7 @@ class SoundState extends ChangeNotifier with WidgetsBindingObserver {
     for (final e in _entries.entries) {
       if (e.value.isSelected) _playSound(e.key);
     }
+    _updateNowPlaying();
     notifyListeners();
   }
 
@@ -299,6 +320,7 @@ class SoundState extends ChangeNotifier with WidgetsBindingObserver {
     for (final p in _players.values) {
       p.stop();
     }
+    _updateNowPlaying();
     notifyListeners();
   }
 
@@ -310,25 +332,43 @@ class SoundState extends ChangeNotifier with WidgetsBindingObserver {
     for (final p in _players.values) {
       p.stop();
     }
+    _currentPresetName = null;
     _saveToPrefs();
+    NowPlayingService.clearNowPlayingInfo();
     notifyListeners();
   }
 
   /// 用预设覆盖当前选择（用于分享或预设加载）
-  void applySounds(Map<String, double> sounds) {
-    unselectAll();
+  /// 
+  /// [presetName] - 可选的预设名称，用于 Now Playing 显示
+  void applySounds(Map<String, double> sounds, {String? presetName}) {
+    // 不调用 unselectAll() 以避免清除 Now Playing
+    for (final ent in _entries.values) {
+      ent.isSelected = false;
+      ent.volume = 0.5;
+    }
+    for (final p in _players.values) {
+      p.stop();
+    }
+    
+    // 应用新的声音配置
     for (final e in sounds.entries) {
       if (_entries[e.key] != null) {
         _entries[e.key]!.isSelected = true;
         _entries[e.key]!.volume = e.value;
       }
     }
+    
+    // 设置预设名称
+    _currentPresetName = presetName;
+    
     if (_isPlaying) {
       for (final id in sounds.keys) {
         _playSound(id);
       }
     }
     _saveToPrefs();
+    _updateNowPlaying();
     notifyListeners();
   }
 
@@ -403,8 +443,9 @@ class SoundState extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     
-    // 记录结束时间（关键：用于后台恢复）
-    _sleepEndTime = DateTime.now().add(duration);
+    // 记录开始时间和结束时间（用于 Now Playing 进度显示）
+    _sleepStartTime = DateTime.now();
+    _sleepEndTime = _sleepStartTime!.add(duration);
     _saveSleepTimerState();
     
     // 安排本地通知作为后台 fallback
@@ -413,6 +454,7 @@ class SoundState extends ChangeNotifier with WidgetsBindingObserver {
     // 启动前台 Timer
     _startSleepTimer(duration);
     
+    _updateNowPlaying();
     notifyListeners();
   }
 
@@ -433,6 +475,7 @@ class SoundState extends ChangeNotifier with WidgetsBindingObserver {
   /// 睡眠定时器触发时
   void _onSleepTimerFired() {
     pause();
+    _sleepStartTime = null;
     _sleepEndTime = null;
     _sleepTimer?.cancel();
     _sleepTimer = null;
@@ -440,6 +483,7 @@ class SoundState extends ChangeNotifier with WidgetsBindingObserver {
     _remainingTimeUpdateTimer = null;
     _saveSleepTimerState();
     NotificationService().cancelSleepTimerNotification();
+    _updateNowPlaying();
     notifyListeners();
     
     if (kDebugMode) {
@@ -450,16 +494,44 @@ class SoundState extends ChangeNotifier with WidgetsBindingObserver {
   void cancelSleepTimer() {
     _sleepTimer?.cancel();
     _sleepTimer = null;
+    _sleepStartTime = null;
     _sleepEndTime = null;
     _remainingTimeUpdateTimer?.cancel();
     _remainingTimeUpdateTimer = null;
     _saveSleepTimerState();
     NotificationService().cancelSleepTimerNotification();
+    _updateNowPlaying();
     notifyListeners();
   }
 
   bool get hasSleepTimer {
     return _sleepEndTime != null;
+  }
+  
+  /// 更新 Now Playing 信息到 iOS 原生层
+  void _updateNowPlaying() {
+    // 如果没有选中的声音，清除 Now Playing
+    if (noSelected) {
+      NowPlayingService.clearNowPlayingInfo();
+      return;
+    }
+    
+    // 计算睡眠定时相关的时长和位置
+    double? duration;
+    double? position;
+    if (_sleepStartTime != null && _sleepEndTime != null) {
+      final totalDuration = _sleepEndTime!.difference(_sleepStartTime!);
+      final elapsed = DateTime.now().difference(_sleepStartTime!);
+      duration = totalDuration.inSeconds.toDouble();
+      position = elapsed.inSeconds.toDouble().clamp(0.0, duration);
+    }
+    
+    NowPlayingService.updateNowPlayingInfo(
+      title: _currentPresetName ?? 'Ting',
+      isPlaying: _isPlaying,
+      duration: duration,
+      position: position,
+    );
   }
 
   @override

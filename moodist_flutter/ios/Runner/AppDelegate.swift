@@ -14,6 +14,9 @@ import AVFoundation
     // 配置 Platform Channel 用于获取 iOS 版本信息
     configurePlatformChannel()
     
+    // 配置 Now Playing 服务（锁屏和控制中心媒体控制）
+    configureNowPlayingService()
+    
     GeneratedPluginRegistrant.register(with: self)
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
@@ -52,5 +55,14 @@ import AVFoundation
     } catch {
       print("Failed to configure audio session: \(error)")
     }
+  }
+  
+  private func configureNowPlayingService() {
+    guard let controller = window?.rootViewController as? FlutterViewController else {
+      print("Failed to get FlutterViewController for NowPlayingService")
+      return
+    }
+    
+    NowPlayingService.shared.configure(with: controller.binaryMessenger)
   }
 }
